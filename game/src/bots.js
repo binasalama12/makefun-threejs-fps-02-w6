@@ -13,6 +13,13 @@ import { collide, lineOfSight, WAYPOINTS, PLANT_ZONE } from './world.js';
 const BOT_SPEED = 3.4;
 const SIGHT_RANGE = 46;
 const EYE = 1.5;
+// Hearing and witness senses (round 2): gunfire carries through the yard
+// even around corners, so HEARING_RADIUS needs no line of sight; seeing a
+// teammate fall does. An alert is remembered for a few seconds, then the
+// bot falls back to its objective behaviour.
+const HEARING_RADIUS = 30;
+const WITNESS_RADIUS = 34;
+const ALERT_MEMORY = 4.5;
 
 const NAMES = {
   ally: ['Sable', 'Ondo'],
@@ -60,6 +67,7 @@ export function createBots(scene, colliders, rng) {
       fireAt: 0, burstLeft: 0, nextThink: rng() * 0.3,
       strafeDir: rng() > 0.5 ? 1 : -1, strafeFlipAt: 0,
       blindUntil: 0, staggerUntil: 0,
+      alertPos: null, alertUntil: 0, alertKind: null,
       holdPoint: null, defusing: 0,
       meshes: fig, group: fig.group,
     };
@@ -102,6 +110,50 @@ export function createBots(scene, colliders, rng) {
       collide(colliders, bot.pos, 0.55);
     }
     return dist;
+  }
+
+  // --- Senses beyond sight -------------------------------------------
+  // Hearing: a shot fired within HEARING_RADIUS alerts every opposing
+  // bot to investigate the shooter's position. Sound needs no line of
+  // sight — that is what makes firing from cover a tactical cost.
+  function senseHearing(bot, shotPos, now) {
+    const d = Math.hypot(shotPos.x - bot.pos.x, shotPos.z - bot.pos.z);
+    if (d > HEARING_RADIUS) return;
+    bot.alertPos = { x: shotPos.x, z: shotPos.z };
+    bot.alertUntil = now + ALERT_MEMORY;
+    bot.alertKind = 'sound';
+  }
+
+  // Witness: a bot that can see a teammate die (or see the killer's
+  // position from where the teammate fell) becomes alerted and checks
+  // the killer's direction instead of walking its patrol loop blind.
+  function senseWitnessDeath(bot, deadBot, killerPos, now) {
+    const dDead = Math.hypot(deadBot.pos.x - bot.pos.x, deadBot.pos.z - bot.pos.z);
+    if (dDead > WITNESS_RADIUS) return;
+    const seesDeath = lineOfSight(colliders, bot.pos.x, bot.pos.z, deadBot.pos.x, deadBot.pos.z);
+    const seesKiller = killerPos && lineOfSight(colliders, bot.pos.x, bot.pos.z, killerPos.x, killerPos.z);
+    if (!seesDeath && !seesKiller) return;
+    const toward = killerPos || deadBot.pos;
+    bot.alertPos = { x: toward.x, z: toward.z };
+    bot.alertUntil = now + ALERT_MEMORY + 1.5;
+    bot.alertKind = 'witness';
+  }
+
+  // Called by main.js whenever any gun is fired (player or bot).
+  function notifyShot(shooterPos, shooterTeam, now) {
+    for (const bot of bots) {
+      if (!bot.alive || bot.team === shooterTeam) continue;
+      senseHearing(bot, shooterPos, now);
+    }
+  }
+
+  // Called by main.js whenever a bot dies; killerPos may be a plain
+  // {x, z} (player or bot position at the moment of the kill).
+  function notifyDeath(deadBot, killerPos, now) {
+    for (const bot of bots) {
+      if (!bot.alive || bot === deadBot || bot.team !== deadBot.team) continue;
+      senseWitnessDeath(bot, deadBot, killerPos, now);
+    }
   }
 
   // One simulation tick. `ctx` carries the round state bots react to and the
@@ -161,6 +213,18 @@ export function createBots(scene, colliders, rng) {
         else bot.defusing = 0;
         continue;
       }
+      // Investigate: no visible foe, but a sense alert (gunfire heard or
+      // a teammate seen falling) pulls the bot off its loop to check the
+      // spot. Arriving bots scan the area briefly, then the alert fades.
+      if (!blinded && !staggered && bot.alertPos && now < bot.alertUntil) {
+        bot.mode = 'investigate';
+        const d = moveToward(bot, bot.alertPos.x, bot.alertPos.z, dt, 1.0);
+        if (d < 1.6) {
+          bot.yaw += Math.sin(now * 1.7 + bot.wpIndex * 2.1) * 1.9 * dt;
+          bot.alertUntil = Math.min(bot.alertUntil, now + 1.1);
+        }
+        continue;
+      }
       if (bot.team === 'enemy' && bot.holdPoint) {
         bot.mode = 'hold';
         const d = moveToward(bot, bot.holdPoint.x, bot.holdPoint.z, dt, 0.95);
@@ -199,5 +263,5 @@ export function createBots(scene, colliders, rng) {
     return out;
   }
 
-  return { bots, reset, step, damage, aliveCount, hitMeshes };
+  return { bots, reset, step, damage, aliveCount, hitMeshes, notifyShot, notifyDeath };
 }

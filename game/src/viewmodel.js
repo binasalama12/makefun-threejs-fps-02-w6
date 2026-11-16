@@ -30,6 +30,15 @@ export function createViewModel(camera) {
   let currentId = null;
   let flashUntil = 0;
   let bobT = 0;
+  // Juice state (round 2), all scalar — nothing allocated per frame.
+  // baseX/baseY ease between the hip and ADS anchor points; the recoil
+  // spring (recoilPos/recoilVel) is kicked by fire() and settles back;
+  // lookSway is fed by trackLook() with raw mouse deltas and decays, so
+  // the gun lags a touch behind a fast flick and then catches up.
+  let aimingNow = false;
+  let baseX = 0.28, baseY = -0.24;
+  let recoilPos = 0, recoilVel = 0;
+  let lookSwayX = 0, lookSwayY = 0;
 
   function setWeapon(id) {
     if (id === currentId) return;
@@ -57,30 +66,59 @@ export function createViewModel(camera) {
   }
 
   function setAiming(aiming) {
-    const tx = aiming ? 0 : 0.28;
-    const ty = aiming ? -0.185 : -0.24;
-    group.position.x += (tx - group.position.x) * 0.35;
-    group.position.y += (ty - group.position.y) * 0.35;
+    aimingNow = aiming;
   }
 
-  function fire(now) {
+  // Raw mouse delta from main.js each frame; converted to a small lag
+  // offset opposite the flick direction, clamped so big flicks stay sane.
+  function trackLook(dx, dy) {
+    lookSwayX = Math.max(-0.04, Math.min(0.04, lookSwayX - dx * 0.00006));
+    lookSwayY = Math.max(-0.03, Math.min(0.03, lookSwayY + dy * 0.00005));
+  }
+
+  function fire(now, kick = 0.011) {
     flash.intensity = 14;
     flashQuad.material.opacity = 0.9;
     flashQuad.rotation.z = Math.random() * Math.PI;
     flashUntil = now + 45;
-    group.position.z = -0.48;
+    // Recoil kick: an impulse into the spring; heavier guns kick harder.
+    recoilVel += 0.35 + kick * 60;
   }
 
   function update(now, speed, dt) {
     if (now > flashUntil) { flash.intensity = 0; flashQuad.material.opacity = 0; }
-    group.position.z += (-0.55 - group.position.z) * 0.4;
-    bobT += dt * (2 + speed * 1.6);
-    const sway = Math.min(speed, 6) * 0.006;
-    group.position.y += Math.sin(bobT * 2) * sway * 0.12;
-    group.rotation.z = Math.sin(bobT) * sway * 0.25;
+    const stepDt = Math.min(dt, 0.033);
+    // Anchor easing (hip <-> ADS).
+    const tx = aimingNow ? 0 : 0.28;
+    const ty = aimingNow ? -0.185 : -0.24;
+    const ease = Math.min(1, stepDt * 14);
+    baseX += (tx - baseX) * ease;
+    baseY += (ty - baseY) * ease;
+    // Recoil spring, two substeps so it stays stable at low frame rates.
+    for (let i = 0; i < 2; i += 1) {
+      const h = stepDt / 2;
+      recoilVel += (-190 * recoilPos - 16 * recoilVel) * h;
+      recoilPos += recoilVel * h;
+    }
+    // Look sway decays back to centre.
+    const decay = Math.pow(0.002, stepDt);
+    lookSwayX *= decay;
+    lookSwayY *= decay;
+    // Walk bob: a pure function of bobT (no accumulation into position,
+    // so it can never drift), scaled by actual movement speed.
+    bobT += stepDt * speed * 1.9;
+    const bobAmp = Math.min(speed, 6) * 0.0035 * (aimingNow ? 0.35 : 1);
+    const bobX = Math.cos(bobT) * bobAmp * 0.6;
+    const bobY = -Math.abs(Math.sin(bobT)) * bobAmp;
+    group.position.set(
+      baseX + bobX + lookSwayX,
+      baseY + bobY + lookSwayY,
+      -0.55 + recoilPos,
+    );
+    group.rotation.set(recoilPos * 0.85, lookSwayX * 1.3, Math.sin(bobT) * bobAmp * 0.7 + lookSwayX * 0.9);
   }
 
-  return { setWeapon, setAiming, fire, update, group };
+  return { setWeapon, setAiming, fire, update, trackLook, group };
 }
 
 // Short-lived tracer + impact puff pool, reused so the hot loop allocates

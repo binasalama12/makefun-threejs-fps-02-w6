@@ -20,6 +20,7 @@ import { createInput } from './input.js';
 import { createHud } from './hud.js';
 import { createAudio } from './audio.js';
 import { createViewModel, createTracers } from './viewmodel.js';
+import { damageForHit } from './hitmodel.js';
 
 const FIXED_STEP = 1 / 60;
 const ROUND_TIME = 100;
@@ -250,7 +251,8 @@ function playerShoot() {
   gun.lastShotAt = now;
   gun.bloom = Math.min(0.05, gun.bloom + def.spread * 0.9);
   if (soundOn) audio.shot(def.id);
-  viewModel.fire(performance.now());
+  bots.notifyShot(player.state.position, 'ally', now);
+  viewModel.fire(performance.now(), def.kick);
   player.recoil(def.kick * (0.8 + rng() * 0.4), (rng() - 0.5) * def.kick * 0.6);
 
   camera.getWorldDirection(_dir);
@@ -271,16 +273,16 @@ function playerShoot() {
       const bot = hit.object.userData.bot;
       if (bot && bot.alive) {
         const part = hit.object.userData.part;
-        let dmg = def.damage * (part === 'head' ? def.headMult : 1);
-        if (hit.distance > 42) dmg *= 0.75;
+        const { damage: dmg, headshot } = damageForHit(def, part, hit.distance);
         const killed = bots.damage(bot, dmg);
-        hud.hitMarker(killed);
-        if (soundOn) audio.hit(killed);
+        hud.hitMarker(killed, headshot);
+        if (soundOn) audio.hit(killed, headshot);
         if (killed) {
           S.kills += 1;
-          S.money += 300;
+          S.money += headshot ? 350 : 300;
           hud.setMoney(S.money);
-          hud.feedLine(`You dropped ${bot.name}  +$300`);
+          hud.killFeed({ killer: 'You', victim: bot.name, weapon: def.name, headshot });
+          bots.notifyDeath(bot, player.state.position, S.simNow);
           checkElimination();
         }
       }
@@ -321,7 +323,7 @@ function damagePlayer(amount, attackerName) {
   if (player.state.hp <= 0) {
     player.state.alive = false;
     S.deaths += 1;
-    hud.feedLine(`${attackerName} downed you`);
+    hud.killFeed({ killer: attackerName, victim: 'You' });
     hud.banner('YOU ARE DOWN', 'Your crew fights on without you');
     checkElimination();
   }
@@ -338,6 +340,7 @@ function checkElimination() {
 // Bot gunfire resolved by probability, honest about distance and movement.
 function onBotShoot(bot, target, dist) {
   const nowMs = performance.now();
+  bots.notifyShot(bot.pos, bot.team, S.simNow);
   const from = _from.set(bot.pos.x, 1.35, bot.pos.z);
   const targetSpeed = target.isPlayer ? player.speed() : 2;
   let chance = 0.60 - dist * 0.008 - targetSpeed * 0.045;
@@ -354,7 +357,8 @@ function onBotShoot(bot, target, dist) {
   else if (target.bot) {
     const killed = bots.damage(target.bot, dmg);
     if (killed) {
-      hud.feedLine(`${bot.name} dropped ${target.bot.name}`);
+      hud.killFeed({ killer: bot.name, victim: target.bot.name });
+      bots.notifyDeath(target.bot, bot.pos, S.simNow);
       checkElimination();
     }
   }
@@ -391,8 +395,9 @@ function stepGrenade(dt) {
         bot.blindUntil = S.simNow + 3.5;
         bot.staggerUntil = S.simNow + 1.1;
         const killed = bots.damage(bot, 26);
-        hud.feedLine(killed ? `Dustburst dropped ${bot.name}` : `${bot.name} is blinded by dust`);
-        if (killed) { S.kills += 1; checkElimination(); }
+        if (killed) hud.killFeed({ killer: 'You', victim: bot.name, weapon: GRENADE.name });
+        else hud.feedLine(`${bot.name} is blinded by dust`);
+        if (killed) { S.kills += 1; bots.notifyDeath(bot, player.state.position, S.simNow); checkElimination(); }
       }
     }
   } else {
@@ -527,6 +532,7 @@ function frame(now) {
   lastTime = now;
   if (!frozenFrame) {
     const look = input.takeLook();
+    viewModel.trackLook(look.x, look.y);
     if (input.locked || shot) player.look(look.x, look.y);
     handleKeys();
     if (input.firing && !prevFiring || (input.firing && currentGun().def.auto)) {
@@ -624,8 +630,8 @@ function runShot(name) {
     hud.setHp(78); hud.setMoney(S.money);
     hud.setRound(3, MAX_ROUNDS, 2, 1);
     hud.setTimer(72); hud.setPhase('LIVE — plant at the tower or eliminate the Rustjackals');
-    hud.feedLine('Sable dropped Mire');
-    hud.feedLine('You dropped Hask  +$300');
+    hud.killFeed({ killer: 'Sable', victim: 'Mire' });
+    hud.killFeed({ killer: 'You', victim: 'Hask', weapon: 'Relay Carbine R-7', headshot: true });
     hud.hitMarker(false);
     refreshAmmoHud();
     viewModel.fire(performance.now());
