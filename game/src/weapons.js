@@ -5,13 +5,13 @@
 export const WEAPONS = [
   {
     id: 'kestrel', name: 'Kestrel-9 Sidearm', slot: 'sidearm', price: 0,
-    damage: 26, headMult: 2.6, fireRate: 260, auto: false,
+    damage: 26, headMult: 4.0, fireRate: 260, auto: false,
     mag: 12, reserve: 48, reloadMs: 1100, spread: 0.011, kick: 0.010,
     range: 70, pellets: 1, zoom: 1.0, desc: 'Free sidearm. Honest, slow, accurate.',
   },
   {
     id: 'grit', name: 'Gritfang SMG', slot: 'primary', price: 1250,
-    damage: 19, headMult: 2.2, fireRate: 82, auto: true,
+    damage: 19, headMult: 3.2, fireRate: 82, auto: true,
     mag: 30, reserve: 90, reloadMs: 1700, spread: 0.026, kick: 0.007,
     range: 55, pellets: 1, zoom: 1.0, desc: 'Fast close work. Bloom punishes long sprays.',
   },
@@ -23,7 +23,7 @@ export const WEAPONS = [
   },
   {
     id: 'carbine', name: 'Relay Carbine R-7', slot: 'primary', price: 2100,
-    damage: 34, headMult: 2.8, fireRate: 128, auto: true,
+    damage: 34, headMult: 4.0, fireRate: 128, auto: true,
     mag: 25, reserve: 75, reloadMs: 1900, spread: 0.009, kick: 0.011,
     range: 95, pellets: 1, zoom: 1.15, desc: 'The all-rounder for the long desert lanes.',
   },

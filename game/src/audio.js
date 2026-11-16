@@ -68,7 +68,17 @@ export function createAudio() {
     botShot() { burst({ dur: 0.09, freq: 1100, gain: 0.16, sweepTo: 260 }); },
     dryFire() { tone({ freq: 1900, dur: 0.03, type: 'square', gain: 0.08 }); },
     reload() { tone({ freq: 620, dur: 0.05, type: 'square', gain: 0.12 }); setTimeout(() => tone({ freq: 880, dur: 0.05, type: 'square', gain: 0.12 }), 160); },
-    hit(kill) { tone({ freq: kill ? 1320 : 980, dur: kill ? 0.14 : 0.06, type: 'sine', gain: 0.22 }); },
+    hit(kill, headshot = false) {
+      if (headshot) {
+        // Distinct headshot confirm: a bright ping plus a short click, so
+        // a head hit is audible without looking at the hitmarker.
+        tone({ freq: 1760, dur: 0.09, type: 'sine', gain: 0.26 });
+        tone({ freq: 2600, dur: 0.04, type: 'square', gain: 0.1 });
+        if (kill) setTimeout(() => tone({ freq: 1320, dur: 0.14, type: 'sine', gain: 0.22 }), 55);
+        return;
+      }
+      tone({ freq: kill ? 1320 : 980, dur: kill ? 0.14 : 0.06, type: 'sine', gain: 0.22 });
+    },
     hurt() { tone({ freq: 180, dur: 0.12, type: 'sawtooth', gain: 0.18, slideTo: 90 }); },
     plantBeep() { tone({ freq: 1040, dur: 0.07, type: 'square', gain: 0.16 }); },
     planted() { tone({ freq: 740, dur: 0.1, type: 'square', gain: 0.2 }); setTimeout(() => tone({ freq: 1180, dur: 0.16, type: 'square', gain: 0.2 }), 130); },

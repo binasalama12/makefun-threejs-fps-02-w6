@@ -1,6 +1,8 @@
 // DOM HUD: health, money, round, timer, ammo, team score, kill feed, the buy
 // menu, and the start / pause / scoreboard overlays. All presentation lives
 // here; game state stays in main.js and is pushed in through these setters.
+import { formatKill, killFeedClass } from './killfeed.js';
+
 export function createHud() {
   const el = (id) => document.getElementById(id);
   const hp = el('hp-value'), hpBar = el('hp-bar');
@@ -41,11 +43,12 @@ export function createHud() {
     setTimer(sec) { timerEl.textContent = fmtTime(sec); },
     setPhase(text) { phaseEl.textContent = text; },
     setHint(text) { hint.textContent = text || ''; hint.style.opacity = text ? '1' : '0'; },
-    hitMarker(kill) {
+    hitMarker(kill, headshot = false) {
       hitmarker.classList.add('on');
-      hitmarker.style.color = kill ? 'var(--enemy)' : 'var(--ink)';
+      // Kill = red, headshot = gold, plain body hit = ink.
+      hitmarker.style.color = kill ? 'var(--enemy)' : (headshot ? '#ffd23e' : 'var(--ink)');
       clearTimeout(hitTimer);
-      hitTimer = setTimeout(() => hitmarker.classList.remove('on'), kill ? 260 : 110);
+      hitTimer = setTimeout(() => hitmarker.classList.remove('on'), kill ? 260 : (headshot ? 200 : 110));
     },
     hurtFlash() {
       damageVignette.style.opacity = '1';
@@ -60,6 +63,17 @@ export function createHud() {
     feedLine(text) {
       const div = document.createElement('div');
       div.textContent = text;
+      feed.appendChild(div);
+      while (feed.children.length > 5) feed.removeChild(feed.firstChild);
+      setTimeout(() => { if (div.parentNode) div.parentNode.removeChild(div); }, 5200);
+    },
+    // Structured kill feed: last ~5 eliminations, each fading after
+    // ~5s, headshot lines tinted gold with the ◎ mark (see killfeed.js).
+    killFeed(entry) {
+      const div = document.createElement('div');
+      div.className = killFeedClass(entry);
+      div.textContent = formatKill(entry);
+      if (entry.headshot) div.style.borderRightColor = '#ffd23e';
       feed.appendChild(div);
       while (feed.children.length > 5) feed.removeChild(feed.firstChild);
       setTimeout(() => { if (div.parentNode) div.parentNode.removeChild(div); }, 5200);
